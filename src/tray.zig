@@ -18,7 +18,7 @@ pub const Tray = struct {
         var self = try allocator.create(Tray);
         self.allocator = allocator;
         self.icon = icon;
-        self.mutable_menu = try Menu.create(allocator, menu);
+        self.mutable_menu = try self.createMenu(menu);
 
         self.wc = std.mem.zeroes(std.os.windows.user32.WNDCLASSEXA);
         self.wc.cbSize = @sizeOf(std.os.windows.user32.WNDCLASSEXA);
@@ -103,6 +103,23 @@ pub const Tray = struct {
         self.nid.uFlags = old_flags;
     }
 
+    fn createMenu(tray: *Tray, maybe_menu: ?[]const ConstMenu) !?[]Menu {
+        if (maybe_menu) |menu| {
+            var result = try tray.allocator.alloc(Menu, menu.len);
+            for (result) |*item, i| {
+                item.tray = tray;
+                item.text = try std.unicode.utf8ToUtf16LeWithNull(tray.allocator, menu[i].text);
+                item.disabled = menu[i].disabled;
+                item.checked = menu[i].checked;
+                item.onClick = menu[i].onClick;
+                item.submenu = try Tray.createMenu(tray, menu[i].submenu);
+            }
+            return result;
+        } else {
+            return null;
+        }
+    }
+
     fn convertMenu(menu: []Menu, id: *std.os.windows.UINT) std.os.windows.HMENU {
         var hmenu = CreatePopupMenu();
         for (menu) |*item| {
@@ -157,7 +174,7 @@ pub const Tray = struct {
 };
 
 pub const ConstMenu = struct {
-    text: [*:0]const u8,
+    text: []const u8,
     disabled: bool = false,
     checked: bool = false,
     onClick: ?*const fn (*Menu) void = null,
@@ -165,27 +182,17 @@ pub const ConstMenu = struct {
 };
 
 pub const Menu = struct {
+    tray: *Tray,
     text: [:0]u16,
     disabled: bool,
     checked: bool,
     onClick: ?*const fn (*Menu) void,
     submenu: ?[]Menu,
 
-    pub fn create(allocator: std.mem.Allocator, maybe_menu: ?[]const ConstMenu) !?[]Menu {
-        if (maybe_menu) |menu| {
-            var result = try allocator.alloc(Menu, menu.len);
-            for (result) |*item, i| {
-                var text = menu[i].text;
-                item.text = try std.unicode.utf8ToUtf16LeWithNull(allocator, text[0..std.mem.len(text)]);
-                item.disabled = menu[i].disabled;
-                item.checked = menu[i].checked;
-                item.onClick = menu[i].onClick;
-                item.submenu = try Menu.create(allocator, menu[i].submenu);
-            }
-            return result;
-        } else {
-            return null;
-        }
+    pub fn setText(self: *Menu, text: []const u8) void {
+        var text_utf16 = std.unicode.utf8ToUtf16LeWithNull(self.tray.allocator, text) catch return;
+        self.tray.allocator.free(self.text);
+        self.text = text_utf16;
     }
 };
 

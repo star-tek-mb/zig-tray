@@ -2,20 +2,19 @@ const std = @import("std");
 const tray = @import("tray.zig");
 const qoi = @import("qoi.zig");
 
-var tray_instance: *tray.Tray = undefined;
-
-pub fn onAction(_: *tray.Menu) void {
-    tray_instance.showNotification("zig-tray", "Hello world", 5000);
+pub fn onAction(menu: *tray.Menu) void {
+    menu.tray.showNotification("zig-tray", "Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book.", 5000);
 }
 
-pub fn onQuit(_: *tray.Menu) void {
-    tray_instance.exit();
+pub fn onQuit(menu: *tray.Menu) void {
+    menu.tray.exit();
 }
 
 pub fn main() !void {
     var icon = try qoi.decodeBuffer(std.heap.page_allocator, @embedFile("icon.qoi"));
+    defer icon.deinit(std.heap.page_allocator);
 
-    tray_instance = try tray.Tray.create(
+    var tray_instance = try tray.Tray.create(
         std.heap.page_allocator,
         try tray.createIconFromRGBA(std.mem.sliceAsBytes(icon.pixels), icon.width, icon.height),
         &[_]tray.ConstMenu{
