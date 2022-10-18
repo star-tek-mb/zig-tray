@@ -1,6 +1,8 @@
 const std = @import("std");
 
 pub const Tray = struct {
+    allocator: std.mem.Allocator,
+
     icon: std.os.windows.HICON,
     menu: []const ConstMenu,
 
@@ -10,10 +12,11 @@ pub const Tray = struct {
     wc: std.os.windows.user32.WNDCLASSEXA = undefined,
     hwnd: std.os.windows.HWND = undefined,
     hmenu: std.os.windows.HMENU = undefined,
-    nid: NOTIFYICONDATA = undefined,
+    nid: NOTIFYICONDATAW = undefined,
 
     pub fn create(allocator: std.mem.Allocator, icon: std.os.windows.HICON, menu: []const ConstMenu) !*Tray {
         var self = try allocator.create(Tray);
+        self.allocator = allocator;
         self.icon = icon;
         self.mutable_menu = try Menu.create(allocator, menu);
 
@@ -27,13 +30,13 @@ pub const Tray = struct {
         self.hwnd = try std.os.windows.user32.createWindowExA(0, WC_TRAY_CLASS_NAME, WC_TRAY_CLASS_NAME, 0, 0, 0, 0, 0, null, null, self.wc.hInstance, null);
         _ = std.os.windows.user32.SetWindowLongPtrA(self.hwnd, 0, @intCast(std.os.windows.LONG_PTR, @ptrToInt(self)));
         try std.os.windows.user32.updateWindow(self.hwnd);
-        self.nid = std.mem.zeroes(NOTIFYICONDATA);
-        self.nid.cbSize = @sizeOf(NOTIFYICONDATA);
+        self.nid = std.mem.zeroes(NOTIFYICONDATAW);
+        self.nid.cbSize = @sizeOf(NOTIFYICONDATAW);
         self.nid.hWnd = self.hwnd;
         self.nid.uID = 0;
         self.nid.uFlags = NIF_ICON | NIF_MESSAGE;
         self.nid.uCallbackMessage = WM_TRAY_CALLBACK_MESSAGE;
-        _ = Shell_NotifyIconA(NIM_ADD, &self.nid);
+        _ = Shell_NotifyIconW(NIM_ADD, &self.nid);
         self.update();
 
         return self;
@@ -45,7 +48,7 @@ pub const Tray = struct {
         self.hmenu = Tray.convertMenu(self.mutable_menu.?, &id);
         _ = SendMessageA(self.hwnd, std.os.windows.user32.WM_INITMENUPOPUP, @ptrToInt(self.hmenu), 0);
         self.nid.hIcon = self.icon;
-        _ = Shell_NotifyIconA(NIM_MODIFY, &self.nid);
+        _ = Shell_NotifyIconW(NIM_MODIFY, &self.nid);
         _ = DestroyMenu(prevmenu);
     }
 
@@ -73,14 +76,41 @@ pub const Tray = struct {
         self.running = false;
     }
 
+    pub fn showNotification(self: *Tray, title: []const u8, text: []const u8, timeout_ms: u32) void {
+        var old_flags = self.nid.uFlags;
+        self.nid.uFlags |= NIF_INFO;
+        self.nid.DUMMYUNIONNAME.uTimeout = timeout_ms;
+        self.nid.dwInfoFlags = 0;
+
+        var title_utf16 = std.unicode.utf8ToUtf16LeWithNull(self.allocator, title) catch return;
+        defer self.allocator.free(title_utf16);
+        var text_utf16 = std.unicode.utf8ToUtf16LeWithNull(self.allocator, text) catch return;
+        defer self.allocator.free(text_utf16);
+
+        var i: usize = 0;
+        while (i < self.nid.szInfoTitle.len - 1 and i < title_utf16.len) : (i += 1) {
+            self.nid.szInfoTitle[i] = title_utf16[i];
+        }
+        self.nid.szInfoTitle[i] = 0;
+
+        i = 0;
+        while (i < self.nid.szInfo.len - 1 and i < text_utf16.len) : (i += 1) {
+            self.nid.szInfo[i] = text_utf16[i];
+        }
+        self.nid.szInfo[i] = 0;
+
+        _ = Shell_NotifyIconW(NIM_MODIFY, &self.nid);
+        self.nid.uFlags = old_flags;
+    }
+
     fn convertMenu(menu: []Menu, id: *std.os.windows.UINT) std.os.windows.HMENU {
         var hmenu = CreatePopupMenu();
         for (menu) |*item| {
             if (std.mem.len(item.text) > 0 and item.text[0] == '-') {
-                _ = InsertMenuA(hmenu, id.*, MF_SEPARATOR, 1, "");
+                _ = InsertMenuW(hmenu, id.*, MF_SEPARATOR, 1, std.unicode.utf8ToUtf16LeStringLiteral(""));
             } else {
-                var mitem = std.mem.zeroes(MENUITEMINFO);
-                mitem.cbSize = @sizeOf(MENUITEMINFO);
+                var mitem = std.mem.zeroes(MENUITEMINFOW);
+                mitem.cbSize = @sizeOf(MENUITEMINFOW);
                 mitem.fMask = MIIM_ID | MIIM_TYPE | MIIM_STATE | MIIM_DATA;
                 mitem.fType = 0;
                 mitem.fState = 0;
@@ -98,7 +128,7 @@ pub const Tray = struct {
                 mitem.fMask = mitem.fMask | MIIM_STRING;
                 mitem.dwTypeData = item.text;
                 mitem.dwItemData = @ptrToInt(item);
-                _ = InsertMenuItemA(hmenu, id.*, 1, &mitem);
+                _ = InsertMenuItemW(hmenu, id.*, 1, &mitem);
             }
             id.* = id.* + 1;
         }
@@ -110,18 +140,19 @@ pub const Tray = struct {
             if (item.submenu) |submenu| {
                 freeMenu(allocator, submenu);
             }
+            allocator.free(item.text);
         }
         allocator.free(menu);
     }
 
-    pub fn deinit(self: *Tray, allocator: std.mem.Allocator) void {
-        _ = Shell_NotifyIconA(NIM_DELETE, &self.nid);
+    pub fn deinit(self: *Tray) void {
+        _ = Shell_NotifyIconW(NIM_DELETE, &self.nid);
         _ = DestroyIcon(self.icon);
         _ = DestroyMenu(self.hmenu); // DestroyMenu is recursive, that is, it will destroy the menu and all its submenus.
         _ = std.os.windows.user32.PostQuitMessage(0);
         _ = std.os.windows.user32.UnregisterClassA(WC_TRAY_CLASS_NAME, self.wc.hInstance);
-        freeMenu(allocator, self.mutable_menu.?);
-        allocator.destroy(self);
+        freeMenu(self.allocator, self.mutable_menu.?);
+        self.allocator.destroy(self);
     }
 };
 
@@ -134,7 +165,7 @@ pub const ConstMenu = struct {
 };
 
 pub const Menu = struct {
-    text: [*:0]const u8,
+    text: [:0]u16,
     disabled: bool,
     checked: bool,
     onClick: ?*const fn (*Menu) void,
@@ -144,7 +175,8 @@ pub const Menu = struct {
         if (maybe_menu) |menu| {
             var result = try allocator.alloc(Menu, menu.len);
             for (result) |*item, i| {
-                item.text = menu[i].text;
+                var text = menu[i].text;
+                item.text = try std.unicode.utf8ToUtf16LeWithNull(allocator, text[0..std.mem.len(text)]);
                 item.disabled = menu[i].disabled;
                 item.checked = menu[i].checked;
                 item.onClick = menu[i].onClick;
@@ -175,28 +207,29 @@ const MFS_DISABLED = 0x00000003;
 const MFS_CHECKED = 0x00000008;
 const NIF_ICON = 0x00000002;
 const NIF_MESSAGE = 0x00000001;
+const NIF_INFO = 0x00000010;
 const NIM_ADD = 0x00000000;
 const NIM_MODIFY = 0x00000001;
 const NIM_DELETE = 0x00000002;
 const BI_BITFIELDS = 3;
 const DIB_RGB_COLORS = 0;
 
-const NOTIFYICONDATA = extern struct {
-    cbSize: std.os.windows.DWORD = @sizeOf(NOTIFYICONDATA),
+const NOTIFYICONDATAW = extern struct {
+    cbSize: std.os.windows.DWORD = @sizeOf(NOTIFYICONDATAW),
     hWnd: std.os.windows.HWND,
     uID: std.os.windows.UINT,
     uFlags: std.os.windows.UINT,
     uCallbackMessage: std.os.windows.UINT,
     hIcon: std.os.windows.HICON,
-    szTip: [128]u8,
+    szTip: [128]u16,
     dwState: std.os.windows.DWORD,
     dwStateMask: std.os.windows.DWORD,
-    szInfo: [256]u8,
+    szInfo: [256]u16,
     DUMMYUNIONNAME: extern union {
         uTimeout: std.os.windows.UINT,
         uVersion: std.os.windows.UINT,
     },
-    szInfoTitle: [64]u8,
+    szInfoTitle: [64]u16,
     dwInfoFlags: std.os.windows.DWORD,
     guidItem: std.os.windows.GUID,
     hBalloonIcon: std.os.windows.HICON,
@@ -204,8 +237,8 @@ const NOTIFYICONDATA = extern struct {
 
 const HBITMAP = *opaque {};
 
-const MENUITEMINFO = extern struct {
-    cbSize: std.os.windows.UINT = @sizeOf(MENUITEMINFO),
+const MENUITEMINFOW = extern struct {
+    cbSize: std.os.windows.UINT = @sizeOf(MENUITEMINFOW),
     fMask: std.os.windows.UINT,
     fType: std.os.windows.UINT,
     fState: std.os.windows.UINT,
@@ -214,7 +247,7 @@ const MENUITEMINFO = extern struct {
     hbmpChecked: HBITMAP,
     hbmpUnchecked: HBITMAP,
     dwItemData: std.os.windows.ULONG_PTR,
-    dwTypeData: std.os.windows.LPCSTR,
+    dwTypeData: std.os.windows.LPCWSTR,
     cch: std.os.windows.UINT,
     hbmpItem: HBITMAP,
 };
@@ -269,13 +302,13 @@ extern "user32" fn SetForegroundWindow(hWnd: std.os.windows.HWND) callconv(std.o
 extern "user32" fn TrackPopupMenu(hMenu: std.os.windows.HMENU, uFlags: std.os.windows.UINT, x: i32, y: i32, nReserved: i32, hWnd: std.os.windows.HWND, prcRect: [*c]const std.os.windows.RECT) callconv(std.os.windows.WINAPI) std.os.windows.BOOL;
 extern "user32" fn SendMessageA(hWnd: std.os.windows.HWND, uMsg: std.os.windows.UINT, wParam: std.os.windows.WPARAM, lParam: std.os.windows.LPARAM) callconv(std.os.windows.WINAPI) std.os.windows.LRESULT;
 extern "user32" fn CreatePopupMenu() callconv(std.os.windows.WINAPI) std.os.windows.HMENU;
-extern "user32" fn InsertMenuA(hMenu: std.os.windows.HMENU, uPosition: std.os.windows.UINT, uFlags: std.os.windows.UINT, uIDNewItem: std.os.windows.ULONGLONG, lpNewItem: ?std.os.windows.LPCSTR) callconv(std.os.windows.WINAPI) std.os.windows.BOOL;
-extern "user32" fn InsertMenuItemA(hMenu: std.os.windows.HMENU, item: std.os.windows.UINT, fByPosition: std.os.windows.BOOL, lpmi: [*c]MENUITEMINFO) callconv(std.os.windows.WINAPI) std.os.windows.BOOL;
+extern "user32" fn InsertMenuW(hMenu: std.os.windows.HMENU, uPosition: std.os.windows.UINT, uFlags: std.os.windows.UINT, uIDNewItem: std.os.windows.ULONGLONG, lpNewItem: ?std.os.windows.LPCWSTR) callconv(std.os.windows.WINAPI) std.os.windows.BOOL;
+extern "user32" fn InsertMenuItemW(hMenu: std.os.windows.HMENU, item: std.os.windows.UINT, fByPosition: std.os.windows.BOOL, lpmi: [*c]MENUITEMINFOW) callconv(std.os.windows.WINAPI) std.os.windows.BOOL;
 extern "user32" fn DestroyMenu(hMenu: std.os.windows.HMENU) callconv(std.os.windows.WINAPI) std.os.windows.BOOL;
 extern "user32" fn DestroyIcon(hIcon: std.os.windows.HICON) callconv(std.os.windows.WINAPI) std.os.windows.BOOL;
-extern "user32" fn GetMenuItemInfoA(hMenu: std.os.windows.HMENU, item: std.os.windows.UINT, fByPosition: std.os.windows.BOOL, lpmii: [*c]MENUITEMINFO) callconv(std.os.windows.WINAPI) std.os.windows.BOOL;
+extern "user32" fn GetMenuItemInfoW(hMenu: std.os.windows.HMENU, item: std.os.windows.UINT, fByPosition: std.os.windows.BOOL, lpmii: [*c]MENUITEMINFOW) callconv(std.os.windows.WINAPI) std.os.windows.BOOL;
 extern "user32" fn CreateIconIndirect(piconinfo: [*c]ICONINFO) callconv(std.os.windows.WINAPI) std.os.windows.HICON;
-extern "shell32" fn Shell_NotifyIconA(dwMessage: std.os.windows.DWORD, lpData: [*c]NOTIFYICONDATA) callconv(std.os.windows.WINAPI) std.os.windows.BOOL;
+extern "shell32" fn Shell_NotifyIconW(dwMessage: std.os.windows.DWORD, lpData: [*c]NOTIFYICONDATAW) callconv(std.os.windows.WINAPI) std.os.windows.BOOL;
 extern "shell32" fn ExtractIconExA(lpszFile: std.os.windows.LPCSTR, nIconIndex: i32, phiconLarge: [*c]std.os.windows.HICON, phiconSmall: [*c]std.os.windows.HICON, nIcons: std.os.windows.UINT) callconv(std.os.windows.WINAPI) std.os.windows.UINT;
 // TODO: pbmi is type of const BITMAPINFO*
 extern "gdi32" fn CreateDIBSection(hdc: ?std.os.windows.HDC, pbmi: [*c]const BITMAPV5HEADER, usage: std.os.windows.UINT, ppvBits: [*c][*c]u8, hSection: ?std.os.windows.HANDLE, offset: std.os.windows.DWORD) callconv(std.os.windows.WINAPI) ?HBITMAP;
@@ -307,10 +340,10 @@ fn WndProc(hwnd: std.os.windows.HWND, uMsg: std.os.windows.UINT, wParam: std.os.
         },
         std.os.windows.user32.WM_COMMAND => {
             if (wParam >= ID_TRAY_FIRST) {
-                var item: MENUITEMINFO = undefined;
-                item.cbSize = @sizeOf(MENUITEMINFO);
+                var item: MENUITEMINFOW = undefined;
+                item.cbSize = @sizeOf(MENUITEMINFOW);
                 item.fMask = MIIM_ID | MIIM_DATA;
-                if (GetMenuItemInfoA(tray.hmenu, @intCast(c_uint, wParam), 0, &item) != 0) {
+                if (GetMenuItemInfoW(tray.hmenu, @intCast(c_uint, wParam), 0, &item) != 0) {
                     var menu_pointer = @intCast(usize, item.dwItemData);
                     if (menu_pointer != 0) {
                         var menu = @intToPtr(*Menu, menu_pointer);

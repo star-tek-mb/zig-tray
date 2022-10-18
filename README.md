@@ -1,6 +1,6 @@
 # Overview
 
-zig-tray is a library for creating tray applications.
+zig-tray is a library for creating tray applications. Supports tray and notifications.
 
 # Supported platforms
 
@@ -23,6 +23,10 @@ const qoi = @import("qoi.zig");
 
 var tray_instance: *tray.Tray = undefined;
 
+pub fn onAction(_: *tray.Menu) void {
+    tray_instance.showNotification("zig-tray", "Hello world", 5000);
+}
+
 pub fn onQuit(_: *tray.Menu) void {
     tray_instance.exit();
 }
@@ -37,6 +41,7 @@ pub fn main() !void {
                 .submenu = &[_]tray.ConstMenu{
                     .{
                         .text = "Submenu",
+                        .onClick = onAction,
                     },
                 },
             },
@@ -46,7 +51,7 @@ pub fn main() !void {
             },
         },
     );
-    defer tray_instance.deinit(std.heap.page_allocator);
+    defer tray_instance.deinit();
     tray_instance.run();
 }
 ```
