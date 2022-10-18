@@ -2,23 +2,18 @@ const std = @import("std");
 
 pub const Tray = struct {
     allocator: std.mem.Allocator,
-
     icon: std.os.windows.HICON,
     menu: []const ConstMenu,
 
     mutable_menu: ?[]Menu = null,
-
     running: bool = true,
     wc: std.os.windows.user32.WNDCLASSEXA = undefined,
     hwnd: std.os.windows.HWND = undefined,
     hmenu: std.os.windows.HMENU = undefined,
     nid: NOTIFYICONDATAW = undefined,
 
-    pub fn create(allocator: std.mem.Allocator, icon: std.os.windows.HICON, menu: []const ConstMenu) !*Tray {
-        var self = try allocator.create(Tray);
-        self.allocator = allocator;
-        self.icon = icon;
-        self.mutable_menu = try self.createMenu(menu);
+    pub fn init(self: *Tray) !void {
+        self.mutable_menu = try Tray.allocateMenu(self, self.menu);
 
         self.wc = std.mem.zeroes(std.os.windows.user32.WNDCLASSEXA);
         self.wc.cbSize = @sizeOf(std.os.windows.user32.WNDCLASSEXA);
@@ -38,11 +33,9 @@ pub const Tray = struct {
         self.nid.uCallbackMessage = WM_TRAY_CALLBACK_MESSAGE;
         _ = Shell_NotifyIconW(NIM_ADD, &self.nid);
         self.update();
-
-        return self;
     }
 
-    pub fn update(self: *Tray) void {
+    fn update(self: *Tray) void {
         var prevmenu = self.hmenu;
         var id: std.os.windows.UINT = ID_TRAY_FIRST;
         self.hmenu = Tray.convertMenu(self.mutable_menu.?, &id);
@@ -103,7 +96,8 @@ pub const Tray = struct {
         self.nid.uFlags = old_flags;
     }
 
-    fn createMenu(tray: *Tray, maybe_menu: ?[]const ConstMenu) !?[]Menu {
+    // recursive function
+    fn allocateMenu(tray: *Tray, maybe_menu: ?[]const ConstMenu) !?[]Menu {
         if (maybe_menu) |menu| {
             var result = try tray.allocator.alloc(Menu, menu.len);
             for (result) |*item, i| {
@@ -112,7 +106,7 @@ pub const Tray = struct {
                 item.disabled = menu[i].disabled;
                 item.checked = menu[i].checked;
                 item.onClick = menu[i].onClick;
-                item.submenu = try Tray.createMenu(tray, menu[i].submenu);
+                item.submenu = try Tray.allocateMenu(tray, menu[i].submenu);
             }
             return result;
         } else {
@@ -169,7 +163,6 @@ pub const Tray = struct {
         _ = std.os.windows.user32.PostQuitMessage(0);
         _ = std.os.windows.user32.UnregisterClassA(WC_TRAY_CLASS_NAME, self.wc.hInstance);
         freeMenu(self.allocator, self.mutable_menu.?);
-        self.allocator.destroy(self);
     }
 };
 

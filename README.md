@@ -16,7 +16,7 @@ zig build
 
 # Usage
 
-```rust
+```zig
 const std = @import("std");
 const tray = @import("tray.zig");
 const qoi = @import("qoi.zig");
@@ -32,10 +32,13 @@ pub fn onQuit(_: *tray.Menu) void {
 }
 
 pub fn main() !void {
-    tray_instance = try tray.Tray.create(
-        std.heap.page_allocator,
-        try tray.createIconFromFile("icon.ico"),
-        &[_]tray.ConstMenu{
+    var icon = try qoi.decodeBuffer(std.heap.page_allocator, @embedFile("icon.qoi"));
+    defer icon.deinit(std.heap.page_allocator);
+
+    var tray_instance = tray.Tray{
+        .allocator = std.heap.page_allocator,
+        .icon = try tray.createIconFromFile("icon.ico"),
+        .menu = &[_]tray.ConstMenu{
             .{
                 .text = "Hello",
                 .submenu = &[_]tray.ConstMenu{
@@ -50,7 +53,8 @@ pub fn main() !void {
                 .onClick = onQuit,
             },
         },
-    );
+    };
+    try tray_instance.init();
     defer tray_instance.deinit();
     tray_instance.run();
 }
