@@ -20,9 +20,6 @@ pub fn build(b: *std.build.Builder) !void {
     const exe = b.addExecutable("zig-tray", "src/main.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
-    exe.linkLibC();
-    exe.linkSystemLibrary("user32");
-    exe.linkSystemLibrary("shell32");
     exe.install();
 
     const icon_step = b.addInstallFile(.{ .path = "src/icon.ico" }, "bin/icon.ico");
