@@ -6,6 +6,7 @@ pub const Tray = struct {
 
     mutable_menu: ?[]Menu = null,
 
+    running: bool = true,
     wc: std.os.windows.user32.WNDCLASSEXA = undefined,
     hwnd: std.os.windows.HWND = undefined,
     hmenu: std.os.windows.HMENU = undefined,
@@ -48,6 +49,15 @@ pub const Tray = struct {
         _ = DestroyMenu(prevmenu);
     }
 
+    pub fn run(self: *Tray) void {
+        self.running = true;
+        while (self.running) {
+            if (!self.loop()) {
+                self.running = false;
+            }
+        }
+    }
+
     pub fn loop(self: *Tray) bool {
         var msg: std.os.windows.user32.MSG = undefined;
         _ = std.os.windows.user32.PeekMessageA(&msg, self.hwnd, 0, 0, std.os.windows.user32.PM_REMOVE);
@@ -60,11 +70,7 @@ pub const Tray = struct {
     }
 
     pub fn exit(self: *Tray) void {
-        _ = Shell_NotifyIconA(NIM_DELETE, &self.nid);
-        _ = DestroyIcon(self.icon);
-        _ = DestroyMenu(self.hmenu);
-        _ = std.os.windows.user32.PostQuitMessage(0);
-        _ = std.os.windows.user32.UnregisterClassA(WC_TRAY_CLASS_NAME, self.wc.hInstance);
+        self.running = false;
     }
 
     fn convertMenu(menu: []Menu, id: *std.os.windows.UINT) std.os.windows.HMENU {
@@ -109,6 +115,11 @@ pub const Tray = struct {
     }
 
     pub fn deinit(self: *Tray, allocator: std.mem.Allocator) void {
+        _ = Shell_NotifyIconA(NIM_DELETE, &self.nid);
+        _ = DestroyIcon(self.icon);
+        _ = DestroyMenu(self.hmenu); // DestroyMenu is recursive, that is, it will destroy the menu and all its submenus.
+        _ = std.os.windows.user32.PostQuitMessage(0);
+        _ = std.os.windows.user32.UnregisterClassA(WC_TRAY_CLASS_NAME, self.wc.hInstance);
         freeMenu(allocator, self.mutable_menu.?);
         allocator.destroy(self);
     }

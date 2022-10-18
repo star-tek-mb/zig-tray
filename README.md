@@ -47,8 +47,7 @@ pub fn main() !void {
         },
     );
     defer tray_instance.deinit(std.heap.page_allocator);
-    while (tray_instance.loop()) {}
-    tray_instance.exit();
+    tray_instance.run();
 }
 ```
 
