@@ -117,7 +117,7 @@ pub const Tray = struct {
     fn convertMenu(menu: []Menu, id: *std.os.windows.UINT) std.os.windows.HMENU {
         var hmenu = CreatePopupMenu();
         for (menu) |*item| {
-            if (std.mem.len(item.text) > 0 and item.text[0] == '-') {
+            if (item.text.len > 0 and item.text[0] == '-') {
                 _ = InsertMenuW(hmenu, id.*, MF_SEPARATOR, 1, std.unicode.utf8ToUtf16LeStringLiteral(""));
             } else {
                 var mitem = std.mem.zeroes(MENUITEMINFOW);
