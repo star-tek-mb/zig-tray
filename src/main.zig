@@ -1,5 +1,5 @@
 const std = @import("std");
-const tray = @import("tray.zig");
+const tray = @import("tray");
 const qoi = @import("qoi.zig");
 
 pub fn onAction(menu: *tray.Menu) void {

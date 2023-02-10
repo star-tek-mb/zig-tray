@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn build(b: *std.build.Builder) !void {
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{
         .default_target = .{
             .cpu_arch = .x86_64,
@@ -8,8 +8,12 @@ pub fn build(b: *std.build.Builder) !void {
             .abi = .gnu,
         },
     });
-
     const optimize = b.standardOptimizeOption(.{});
+
+    b.addModule(.{
+        .name = "tray",
+        .source_file = .{ .path = "src/tray.zig" },
+    });
 
     const exe = b.addExecutable(.{
         .name = "zig-tray",
@@ -17,6 +21,7 @@ pub fn build(b: *std.build.Builder) !void {
         .target = target,
         .optimize = optimize,
     });
+    exe.addModule("tray", b.modules.get("tray").?);
     exe.install();
 
     const icon_step = b.addInstallFile(.{ .path = "src/icon.ico" }, "bin/icon.ico");
