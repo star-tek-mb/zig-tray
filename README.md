@@ -10,16 +10,13 @@ zig-tray is a library for creating tray applications. Supports tray and notifica
 
 # Installation
 
-```
-zig build
-```
+Zig Package Manager ready. Add dependency to your `build.zig.zon`. And use `tray` module from dependency.
 
 # Usage
 
 ```zig
 const std = @import("std");
-const tray = @import("tray.zig");
-const qoi = @import("qoi.zig");
+const tray = @import("tray");
 
 pub fn onAction(menu: *tray.Menu) void {
     menu.tray.showNotification("zig-tray", "Hello world", 5000);
@@ -30,9 +27,6 @@ pub fn onQuit(menu: *tray.Menu) void {
 }
 
 pub fn main() !void {
-    var icon = try qoi.decodeBuffer(std.heap.page_allocator, @embedFile("icon.qoi"));
-    defer icon.deinit(std.heap.page_allocator);
-
     var tray_instance = tray.Tray{
         .allocator = std.heap.page_allocator,
         .icon = try tray.createIconFromFile("icon.ico"),
@@ -64,4 +58,3 @@ see **main.zig** for another example
 
 https://github.com/zserge/tray - for initial C library
 https://github.com/glfw/glfw/blob/master/src/win32_window.c#L102 - for icon creating from rgba
-https://github.com/MasterQ32/zig-qoi - loading qoi icon for main example
