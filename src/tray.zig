@@ -100,7 +100,7 @@ pub const Tray = struct {
     fn allocateMenu(tray: *Tray, maybe_menu: ?[]const ConstMenu) !?[]Menu {
         if (maybe_menu) |menu| {
             var result = try tray.allocator.alloc(Menu, menu.len);
-            for (result) |*item, i| {
+            for (result, 0..) |*item, i| {
                 item.tray = tray;
                 item.text = try std.unicode.utf8ToUtf16LeWithNull(tray.allocator, menu[i].text);
                 item.disabled = menu[i].disabled;
@@ -397,8 +397,7 @@ pub fn createIconFromRGBA(icon_data: []const u8, width: u32, height: u32) !std.o
     }
     defer _ = DeleteObject(mask.?);
 
-    var i: usize = 0;
-    while (i < width * height) : (i += 1) {
+    for (0..width*height) |i| {
         target[i * 4 + 0] = icon_data[i * 4 + 2];
         target[i * 4 + 1] = icon_data[i * 4 + 1];
         target[i * 4 + 2] = icon_data[i * 4 + 0];
