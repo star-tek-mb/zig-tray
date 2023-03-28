@@ -1,17 +1,10 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) !void {
-    const target = b.standardTargetOptions(.{
-        .default_target = .{
-            .cpu_arch = .x86_64,
-            .os_tag = .windows,
-            .abi = .gnu,
-        },
-    });
+    const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    b.addModule(.{
-        .name = "tray",
+    const module = b.addModule("tray", .{
         .source_file = .{ .path = "src/tray.zig" },
     });
 
@@ -21,11 +14,8 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    exe.addModule("tray", b.modules.get("tray").?);
+    exe.addModule("tray", module);
     exe.install();
-
-    const icon_step = b.addInstallFile(.{ .path = "src/icon.ico" }, "bin/icon.ico");
-    try icon_step.step.make();
 
     const run_cmd = exe.run();
     run_cmd.step.dependOn(b.getInstallStep());
