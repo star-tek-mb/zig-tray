@@ -19,11 +19,11 @@ pub const Tray = struct {
         self.wc.cbSize = @sizeOf(std.os.windows.user32.WNDCLASSEXA);
         self.wc.lpfnWndProc = WndProc;
         self.wc.cbWndExtra = @sizeOf(*Tray);
-        self.wc.hInstance = @ptrCast(std.os.windows.HINSTANCE, std.os.windows.kernel32.GetModuleHandleW(null));
+        self.wc.hInstance = @as(std.os.windows.HINSTANCE, @ptrCast(std.os.windows.kernel32.GetModuleHandleW(null)));
         self.wc.lpszClassName = WC_TRAY_CLASS_NAME;
         _ = try std.os.windows.user32.registerClassExA(&self.wc);
         self.hwnd = try std.os.windows.user32.createWindowExA(0, WC_TRAY_CLASS_NAME, WC_TRAY_CLASS_NAME, 0, 0, 0, 0, 0, null, null, self.wc.hInstance, null);
-        _ = std.os.windows.user32.SetWindowLongPtrA(self.hwnd, 0, @intCast(std.os.windows.LONG_PTR, @ptrToInt(self)));
+        _ = std.os.windows.user32.SetWindowLongPtrA(self.hwnd, 0, @as(std.os.windows.LONG_PTR, @intCast(@intFromPtr(self))));
         try std.os.windows.user32.updateWindow(self.hwnd);
         self.nid = std.mem.zeroes(NOTIFYICONDATAW);
         self.nid.cbSize = @sizeOf(NOTIFYICONDATAW);
@@ -39,7 +39,7 @@ pub const Tray = struct {
         var prevmenu = self.hmenu;
         var id: std.os.windows.UINT = ID_TRAY_FIRST;
         self.hmenu = Tray.convertMenu(self.mutable_menu.?, &id);
-        _ = SendMessageA(self.hwnd, std.os.windows.user32.WM_INITMENUPOPUP, @ptrToInt(self.hmenu), 0);
+        _ = SendMessageA(self.hwnd, std.os.windows.user32.WM_INITMENUPOPUP, @intFromPtr(self.hmenu), 0);
         self.nid.hIcon = self.icon;
         _ = Shell_NotifyIconW(NIM_MODIFY, &self.nid);
         _ = DestroyMenu(prevmenu);
@@ -138,7 +138,7 @@ pub const Tray = struct {
                 mitem.wID = id.*;
                 mitem.fMask = mitem.fMask | MIIM_STRING;
                 mitem.dwTypeData = item.text;
-                mitem.dwItemData = @ptrToInt(item);
+                mitem.dwItemData = @intFromPtr(item);
                 _ = InsertMenuItemW(hmenu, id.*, 1, &mitem);
             }
             id.* = id.* + 1;
@@ -320,7 +320,7 @@ fn WndProc(hwnd: std.os.windows.HWND, uMsg: std.os.windows.UINT, wParam: std.os.
     if (tray_pointer == 0) {
         return std.os.windows.user32.DefWindowProcA(hwnd, uMsg, wParam, lParam);
     }
-    var tray = @intToPtr(*Tray, @intCast(usize, tray_pointer));
+    var tray = @as(*Tray, @ptrFromInt(@as(usize, @intCast(tray_pointer))));
 
     switch (uMsg) {
         std.os.windows.user32.WM_CLOSE => {
@@ -335,7 +335,7 @@ fn WndProc(hwnd: std.os.windows.HWND, uMsg: std.os.windows.UINT, wParam: std.os.
                 _ = GetCursorPos(&point);
                 _ = SetForegroundWindow(tray.hwnd);
                 var cmd = TrackPopupMenu(tray.hmenu, TPM_LEFTALIGN | TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY, point.x, point.y, 0, hwnd, null);
-                _ = SendMessageA(hwnd, std.os.windows.user32.WM_COMMAND, @intCast(usize, cmd), 0);
+                _ = SendMessageA(hwnd, std.os.windows.user32.WM_COMMAND, @as(usize, @intCast(cmd)), 0);
             }
         },
         std.os.windows.user32.WM_COMMAND => {
@@ -343,10 +343,10 @@ fn WndProc(hwnd: std.os.windows.HWND, uMsg: std.os.windows.UINT, wParam: std.os.
                 var item: MENUITEMINFOW = undefined;
                 item.cbSize = @sizeOf(MENUITEMINFOW);
                 item.fMask = MIIM_ID | MIIM_DATA;
-                if (GetMenuItemInfoW(tray.hmenu, @intCast(c_uint, wParam), 0, &item) != 0) {
-                    var menu_pointer = @intCast(usize, item.dwItemData);
+                if (GetMenuItemInfoW(tray.hmenu, @as(c_uint, @intCast(wParam)), 0, &item) != 0) {
+                    var menu_pointer = @as(usize, @intCast(item.dwItemData));
                     if (menu_pointer != 0) {
-                        var menu = @intToPtr(*Menu, menu_pointer);
+                        var menu = @as(*Menu, @ptrFromInt(menu_pointer));
                         if (menu.onClick) |onClick| {
                             onClick(menu);
                             tray.update();
@@ -372,8 +372,8 @@ pub fn createIconFromFile(path: [:0]const u8) !std.os.windows.HICON {
 pub fn createIconFromRGBA(icon_data: []const u8, width: u32, height: u32) !std.os.windows.HICON {
     var bi = std.mem.zeroes(BITMAPV5HEADER);
     bi.bV5Size = @sizeOf(BITMAPV5HEADER);
-    bi.bV5Width = @intCast(i32, width);
-    bi.bV5Height = -@intCast(i32, height);
+    bi.bV5Width = @as(i32, @intCast(width));
+    bi.bV5Height = -@as(i32, @intCast(height));
     bi.bV5Planes = 1;
     bi.bV5BitCount = 32;
     bi.bV5Compression = BI_BITFIELDS;
@@ -391,13 +391,13 @@ pub fn createIconFromRGBA(icon_data: []const u8, width: u32, height: u32) !std.o
     }
     defer _ = DeleteObject(color.?);
 
-    var mask = CreateBitmap(@intCast(i32, width), @intCast(i32, height), 1, 1, null);
+    var mask = CreateBitmap(@as(i32, @intCast(width)), @as(i32, @intCast(height)), 1, 1, null);
     if (mask == null) {
         return error.CreateMaskFailed;
     }
     defer _ = DeleteObject(mask.?);
 
-    for (0..width*height) |i| {
+    for (0..width * height) |i| {
         target[i * 4 + 0] = icon_data[i * 4 + 2];
         target[i * 4 + 1] = icon_data[i * 4 + 1];
         target[i * 4 + 2] = icon_data[i * 4 + 0];
