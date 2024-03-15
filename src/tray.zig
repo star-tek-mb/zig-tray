@@ -190,6 +190,7 @@ pub const Menu = struct {
 };
 
 const WM_TRAY_CALLBACK_MESSAGE = std.os.windows.user32.WM_USER + 1;
+const NIN_BALLOONUSERCLICK = std.os.windows.user32.WM_USER + 5;
 const WC_TRAY_CLASS_NAME = "TRAY";
 const ID_TRAY_FIRST = 1000;
 const TPM_LEFTALIGN = 0x0000;
@@ -330,6 +331,11 @@ fn WndProc(hwnd: std.os.windows.HWND, uMsg: std.os.windows.UINT, wParam: std.os.
             _ = std.os.windows.user32.PostQuitMessage(0);
         },
         WM_TRAY_CALLBACK_MESSAGE => {
+            if (lParam == NIN_BALLOONUSERCLICK) {
+                //@breakpoint();
+                // TODO: Handle pop-click.
+            }
+
             if (lParam == std.os.windows.user32.WM_LBUTTONUP or lParam == std.os.windows.user32.WM_RBUTTONUP) {
                 var point: std.os.windows.POINT = undefined;
                 _ = GetCursorPos(&point);
