@@ -4,9 +4,17 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const module = b.addModule("tray", .{
-        .root_source_file = b.path("src/tray.zig"),
-    });
+    var module: *std.Build.Module = undefined;
+    switch (target.result.os.tag) {
+        .windows => {
+            module = b.addModule("tray", .{
+                .root_source_file = b.path("src/tray_windows.zig"),
+            });
+        },
+        else => {
+            @panic("Unsupported platform");
+        },
+    }
 
     const exe = b.addExecutable(.{
         .name = "zig-tray",
