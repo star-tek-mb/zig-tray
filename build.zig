@@ -5,16 +5,17 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
 
     const module = b.addModule("tray", .{
-        .source_file = .{ .path = "src/tray.zig" },
+        .root_source_file = b.path("src/tray.zig"),
     });
 
     const exe = b.addExecutable(.{
         .name = "zig-tray",
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
-    exe.addModule("tray", module);
+    exe.root_module.pic = true;
+    exe.root_module.addImport("tray", module);
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
