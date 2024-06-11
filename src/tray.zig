@@ -5,6 +5,7 @@ pub const Tray = struct {
     icon: std.os.windows.HICON,
     menu: []const ConstMenu,
 
+    onPopupClick: ?*const fn (*Tray) void = null,
     mutable_menu: ?[]Menu = null,
     running: bool = true,
     wc: std.os.windows.user32.WNDCLASSEXA = undefined,
@@ -69,15 +70,15 @@ pub const Tray = struct {
         self.running = false;
     }
 
-    pub fn showNotification(self: *Tray, title: []const u8, text: []const u8, timeout_ms: u32) void {
+    pub fn showNotification(self: *Tray, title: []const u8, text: []const u8, timeout_ms: u32) std.os.windows.BOOL {
         var old_flags = self.nid.uFlags;
         self.nid.uFlags |= NIF_INFO;
         self.nid.DUMMYUNIONNAME.uTimeout = timeout_ms;
         self.nid.dwInfoFlags = 0;
 
-        var title_utf16 = std.unicode.utf8ToUtf16LeWithNull(self.allocator, title) catch return;
+        var title_utf16 = std.unicode.utf8ToUtf16LeWithNull(self.allocator, title) catch return 0;
         defer self.allocator.free(title_utf16);
-        var text_utf16 = std.unicode.utf8ToUtf16LeWithNull(self.allocator, text) catch return;
+        var text_utf16 = std.unicode.utf8ToUtf16LeWithNull(self.allocator, text) catch return 0;
         defer self.allocator.free(text_utf16);
 
         var i: usize = 0;
@@ -92,8 +93,10 @@ pub const Tray = struct {
         }
         self.nid.szInfo[i] = 0;
 
-        _ = Shell_NotifyIconW(NIM_MODIFY, &self.nid);
+        const res = Shell_NotifyIconW(NIM_MODIFY, &self.nid);
         self.nid.uFlags = old_flags;
+
+        return res;
     }
 
     // recursive function
@@ -186,10 +189,13 @@ pub const Menu = struct {
         var text_utf16 = std.unicode.utf8ToUtf16LeWithNull(self.tray.allocator, text) catch return;
         self.tray.allocator.free(self.text);
         self.text = text_utf16;
+
+        self.tray.update();
     }
 };
 
 const WM_TRAY_CALLBACK_MESSAGE = std.os.windows.user32.WM_USER + 1;
+const NIN_BALLOONUSERCLICK = std.os.windows.user32.WM_USER + 5;
 const WC_TRAY_CLASS_NAME = "TRAY";
 const ID_TRAY_FIRST = 1000;
 const TPM_LEFTALIGN = 0x0000;
@@ -330,6 +336,13 @@ fn WndProc(hwnd: std.os.windows.HWND, uMsg: std.os.windows.UINT, wParam: std.os.
             _ = std.os.windows.user32.PostQuitMessage(0);
         },
         WM_TRAY_CALLBACK_MESSAGE => {
+            if (lParam == NIN_BALLOONUSERCLICK) {
+                if (tray.onPopupClick) |onPopupClick| {
+                    onPopupClick(tray);
+                    tray.update();
+                }
+            }
+
             if (lParam == std.os.windows.user32.WM_LBUTTONUP or lParam == std.os.windows.user32.WM_RBUTTONUP) {
                 var point: std.os.windows.POINT = undefined;
                 _ = GetCursorPos(&point);
@@ -341,16 +354,11 @@ fn WndProc(hwnd: std.os.windows.HWND, uMsg: std.os.windows.UINT, wParam: std.os.
         std.os.windows.user32.WM_COMMAND => {
             if (wParam >= ID_TRAY_FIRST) {
                 var item: MENUITEMINFOW = undefined;
-                item.cbSize = @sizeOf(MENUITEMINFOW);
-                item.fMask = MIIM_ID | MIIM_DATA;
-                if (GetMenuItemInfoW(tray.hmenu, @as(c_uint, @intCast(wParam)), 0, &item) != 0) {
-                    var menu_pointer = @as(usize, @intCast(item.dwItemData));
-                    if (menu_pointer != 0) {
-                        var menu = @as(*Menu, @ptrFromInt(menu_pointer));
-                        if (menu.onClick) |onClick| {
-                            onClick(menu);
-                            tray.update();
-                        }
+                var menup = getMenuItemFromWParam(&item, tray.hmenu, wParam);
+                if (menup) |menu| {
+                    if (menu.onClick) |onClick| {
+                        onClick(menu);
+                        tray.update();
                     }
                 }
             }
@@ -358,6 +366,19 @@ fn WndProc(hwnd: std.os.windows.HWND, uMsg: std.os.windows.UINT, wParam: std.os.
         else => return std.os.windows.user32.DefWindowProcA(hwnd, uMsg, wParam, lParam),
     }
     return 0;
+}
+
+fn getMenuItemFromWParam(item: *MENUITEMINFOW, hMenu: std.os.windows.HMENU, wParam: std.os.windows.WPARAM) ?*Menu {
+    item.cbSize = @sizeOf(MENUITEMINFOW);
+    item.fMask = MIIM_ID | MIIM_DATA;
+    if (GetMenuItemInfoW(hMenu, @as(c_uint, @intCast(wParam)), 0, item) != 0) {
+        var menu_pointer = @as(usize, @intCast(item.dwItemData));
+        if (menu_pointer != 0) {
+            var menu = @as(*Menu, @ptrFromInt(menu_pointer));
+            return menu;
+        }
+    }
+    return null;
 }
 
 pub fn createIconFromFile(path: [:0]const u8) !std.os.windows.HICON {
