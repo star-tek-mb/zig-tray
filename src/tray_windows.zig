@@ -1,74 +1,107 @@
 const std = @import("std");
 const lib_win = @import("lib/windows.zig");
 
+const windows = std.os.windows;
+const zeroes = std.mem.zeroes;
+
+pub const ID_TRAY_FIRST = 1000;
+
+const AtomicBool = std.atomic.Value(bool);
+
 pub const Tray = struct {
     allocator: std.mem.Allocator,
+    // icon
     icon: std.os.windows.HICON,
+    // menus
     menu: []const ConstMenu,
 
+    // callback on click on left
     onPopupClick: ?*const fn (*Tray) void = null,
+    onClick: ?*const fn (*Tray) void = null,
     mutable_menu: ?[]Menu = null,
-    running: bool = true,
-    wc: WNDCLASSEXA = undefined,
+    running: AtomicBool = AtomicBool.init(true),
+    wc: WNDCLASSEXA = zeroes(WNDCLASSEXA),
     hwnd: std.os.windows.HWND = undefined,
     hmenu: std.os.windows.HMENU = undefined,
-    nid: NOTIFYICONDATAW = undefined,
+    nid: NOTIFYICONDATAW = zeroes(NOTIFYICONDATAW),
 
     pub fn init(self: *Tray) !void {
         self.mutable_menu = try Tray.allocateMenu(self, self.menu);
 
-        self.wc = std.mem.zeroes(WNDCLASSEXA);
+        // init the wc of self
         self.wc.cbSize = @sizeOf(WNDCLASSEXA);
         self.wc.lpfnWndProc = WndProc;
+
+        // the extra memory allocated
+        // to store the self ptr
         self.wc.cbWndExtra = @sizeOf(*Tray);
         self.wc.hInstance = @as(std.os.windows.HINSTANCE, @ptrCast(std.os.windows.kernel32.GetModuleHandleW(null)));
         self.wc.lpszClassName = lib_win.WC_TRAY_CLASS_NAME;
+
+        // try register class
         _ = try registerClassExA(&self.wc);
+        // try create window
         self.hwnd = try createWindowExA(0, lib_win.WC_TRAY_CLASS_NAME, lib_win.WC_TRAY_CLASS_NAME, 0, 0, 0, 0, 0, null, null, self.wc.hInstance, null);
+
+        // set the extra memory allocated
         _ = lib_win.SetWindowLongPtrA(self.hwnd, 0, @as(std.os.windows.LONG_PTR, @intCast(@intFromPtr(self))));
+        // render window immediately
         _ = lib_win.UpdateWindow(self.hwnd);
-        self.nid = std.mem.zeroes(NOTIFYICONDATAW);
+
+        // set notify icon data
         self.nid.cbSize = @sizeOf(NOTIFYICONDATAW);
         self.nid.hWnd = self.hwnd;
         self.nid.uID = 0;
         self.nid.uFlags = lib_win.NIF_ICON | lib_win.NIF_MESSAGE;
         self.nid.uCallbackMessage = lib_win.WM_TRAY_CALLBACK_MESSAGE;
+
+        // add notify icon to desk bar
         _ = lib_win.Shell_NotifyIconW(lib_win.NIM_ADD, &self.nid);
+
         self.update();
     }
 
     fn update(self: *Tray) void {
+        // get previous menu
         const prevmenu = self.hmenu;
-        var id: std.os.windows.UINT = lib_win.ID_TRAY_FIRST;
+        var id: std.os.windows.UINT = ID_TRAY_FIRST;
+        // generate hmenu
         self.hmenu = Tray.convertMenu(self.mutable_menu.?, &id);
+        // render notify icon
         _ = lib_win.SendMessageA(self.hwnd, lib_win.WM_INITMENUPOPUP, @intFromPtr(self.hmenu), 0);
+
         self.nid.hIcon = self.icon;
+
+        // notify icon modified
         _ = lib_win.Shell_NotifyIconW(lib_win.NIM_MODIFY, &self.nid);
+        // destory previous menu
         _ = lib_win.DestroyMenu(prevmenu);
     }
 
     pub fn run(self: *Tray) void {
-        self.running = true;
-        while (self.running) {
+        self.running.store(true, .monotonic);
+        while (self.running.load(.monotonic)) {
             if (!self.loop()) {
-                self.running = false;
+                self.running.store(false, .monotonic);
             }
         }
     }
 
     pub fn loop(self: *Tray) bool {
         var msg: MSG = undefined;
-        _ = lib_win.PeekMessageA(&msg, self.hwnd, 0, 0, lib_win.PM_REMOVE);
-        if (msg.message == lib_win.WM_QUIT) {
+        if (lib_win.PeekMessageA(&msg, self.hwnd, 0, 0, lib_win.PM_REMOVE) == std.os.windows.FALSE)
+            return true;
+
+        if (msg.message == lib_win.WM_QUIT)
             return false;
-        }
+
         _ = lib_win.TranslateMessage(&msg);
         _ = lib_win.DispatchMessageA(&msg);
         return true;
     }
 
     pub fn exit(self: *Tray) void {
-        self.running = false;
+        self.running.store(false, .monotonic);
     }
 
     pub fn showNotification(self: *Tray, title: []const u8, text: []const u8, timeout_ms: u32) std.os.windows.BOOL {
@@ -106,7 +139,7 @@ pub const Tray = struct {
             const result = try tray.allocator.alloc(Menu, menu.len);
             for (result, 0..) |*item, i| {
                 item.tray = tray;
-                item.text = try std.unicode.utf8ToUtf16LeWithNull(tray.allocator, menu[i].text);
+                item.text = if (menu[i].text == .text) try std.unicode.utf8ToUtf16LeWithNull(tray.allocator, menu[i].text.text) else null;
                 item.disabled = menu[i].disabled;
                 item.checked = menu[i].checked;
                 item.onClick = menu[i].onClick;
@@ -121,31 +154,34 @@ pub const Tray = struct {
     fn convertMenu(menu: []Menu, id: *std.os.windows.UINT) std.os.windows.HMENU {
         const hmenu = lib_win.CreatePopupMenu();
         for (menu) |*item| {
-            if (item.text.len > 0 and item.text[0] == '-') {
-                _ = lib_win.InsertMenuW(hmenu, id.*, lib_win.MF_SEPARATOR, 1, std.unicode.utf8ToUtf16LeStringLiteral(""));
-            } else {
-                var mitem = std.mem.zeroes(MENUITEMINFOW);
+            defer id.* += 1;
+
+            if (item.text) |text| {
+                var mitem = zeroes(MENUITEMINFOW);
                 mitem.cbSize = @sizeOf(MENUITEMINFOW);
                 mitem.fMask = lib_win.MIIM_ID | lib_win.MIIM_TYPE | lib_win.MIIM_STATE | lib_win.MIIM_DATA;
                 mitem.fType = 0;
                 mitem.fState = 0;
+
                 if (item.submenu) |submenu| {
                     mitem.fMask = mitem.fMask | lib_win.MIIM_SUBMENU;
                     mitem.hSubMenu = Tray.convertMenu(submenu, id);
                 }
-                if (item.disabled) {
+
+                if (item.disabled)
                     mitem.fState |= lib_win.MFS_DISABLED;
-                }
-                if (item.checked) {
+
+                if (item.checked)
                     mitem.fState |= lib_win.MFS_CHECKED;
-                }
+
                 mitem.wID = id.*;
                 mitem.fMask = mitem.fMask | lib_win.MIIM_STRING;
-                mitem.dwTypeData = item.text;
+                mitem.dwTypeData = text;
                 mitem.dwItemData = @intFromPtr(item);
-                _ = lib_win.InsertMenuItemW(hmenu, id.*, 1, &mitem);
+                _ = lib_win.InsertMenuItemW(hmenu, id.*, windows.TRUE, &mitem);
+            } else {
+                _ = lib_win.InsertMenuW(hmenu, id.*, lib_win.MF_SEPARATOR, 1, std.unicode.utf8ToUtf16LeStringLiteral(""));
             }
-            id.* = id.* + 1;
         }
         return hmenu;
     }
@@ -155,7 +191,8 @@ pub const Tray = struct {
             if (item.submenu) |submenu| {
                 freeMenu(allocator, submenu);
             }
-            allocator.free(item.text);
+            if (item.text) |text|
+                allocator.free(text);
         }
         allocator.free(menu);
     }
@@ -163,7 +200,8 @@ pub const Tray = struct {
     pub fn deinit(self: *Tray) void {
         _ = lib_win.Shell_NotifyIconW(lib_win.NIM_DELETE, &self.nid);
         _ = lib_win.DestroyIcon(self.icon);
-        _ = lib_win.DestroyMenu(self.hmenu); // DestroyMenu is recursive, that is, it will destroy the menu and all its submenus.
+        // DestroyMenu is recursive, that is, it will destroy the menu and all its submenus.
+        _ = lib_win.DestroyMenu(self.hmenu);
         _ = lib_win.PostQuitMessage(0);
         _ = lib_win.UnregisterClassA(lib_win.WC_TRAY_CLASS_NAME, self.wc.hInstance);
         freeMenu(self.allocator, self.mutable_menu.?);
@@ -171,16 +209,22 @@ pub const Tray = struct {
 };
 
 pub const ConstMenu = struct {
-    text: []const u8,
+    /// if this is null, that mean a separator
+    text: union(enum) {
+        text: []const u8,
+        // this can be init with void{}
+        separator: void,
+    },
     disabled: bool = false,
     checked: bool = false,
     onClick: ?*const fn (*Menu) void = null,
+    /// this is only available when text is not null
     submenu: ?[]const ConstMenu = null,
 };
 
 pub const Menu = struct {
     tray: *Tray,
-    text: [:0]u16,
+    text: ?[:0]const u16,
     disabled: bool,
     checked: bool,
     onClick: ?*const fn (*Menu) void,
@@ -188,7 +232,9 @@ pub const Menu = struct {
 
     pub fn setText(self: *Menu, text: []const u8) void {
         const text_utf16 = std.unicode.utf8ToUtf16LeWithNull(self.tray.allocator, text) catch return;
-        self.tray.allocator.free(self.text);
+        if (self.text) |t|
+            self.tray.allocator.free(t);
+
         self.text = text_utf16;
 
         self.tray.update();
@@ -249,14 +295,25 @@ fn WndProc(hwnd: std.os.windows.HWND, uMsg: std.os.windows.UINT, wParam: std.os.
             _ = lib_win.PostQuitMessage(0);
         },
         lib_win.WM_TRAY_CALLBACK_MESSAGE => {
-            if (lParam == lib_win.NIN_BALLOONUSERCLICK) {
-                if (tray.onPopupClick) |onPopupClick| {
+            // Called when the user clicks on a notification to the system
+            if (tray.onPopupClick) |onPopupClick| {
+                if (lParam == lib_win.NIN_BALLOONUSERCLICK) {
                     onPopupClick(tray);
                     tray.update();
+                    return 0;
                 }
             }
 
-            if (lParam == lib_win.WM_LBUTTONUP or lParam == lib_win.WM_RBUTTONUP) {
+            // Triggered when the user clicks the left mouse button
+            if (tray.onClick) |onClick| {
+                if (lParam == lib_win.WM_LBUTTONUP) {
+                    onClick(tray);
+                    tray.update();
+                    return 0;
+                }
+            }
+
+            if (lParam == lib_win.WM_RBUTTONUP) {
                 var point: std.os.windows.POINT = undefined;
                 _ = lib_win.GetCursorPos(&point);
                 _ = lib_win.SetForegroundWindow(tray.hwnd);
@@ -265,7 +322,7 @@ fn WndProc(hwnd: std.os.windows.HWND, uMsg: std.os.windows.UINT, wParam: std.os.
             }
         },
         lib_win.WM_COMMAND => {
-            if (wParam >= lib_win.ID_TRAY_FIRST) {
+            if (wParam >= ID_TRAY_FIRST) {
                 var item: MENUITEMINFOW = undefined;
                 const menup = getMenuItemFromWParam(&item, tray.hmenu, wParam);
                 if (menup) |menu| {

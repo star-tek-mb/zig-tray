@@ -1,5 +1,7 @@
 const std = @import("std");
 
+pub const WC_TRAY_CLASS_NAME = "TRAY";
+
 pub const WNDPROC = *const fn (
     hwnd: std.os.windows.HWND,
     uMsg: std.os.windows.UINT,
@@ -122,8 +124,6 @@ pub const WM_LBUTTONUP = 0x0202;
 pub const WM_RBUTTONUP = 0x0205;
 pub const WM_COMMAND = 0x0111;
 pub const NIN_BALLOONUSERCLICK = WM_USER + 5;
-pub const WC_TRAY_CLASS_NAME = "TRAY";
-pub const ID_TRAY_FIRST = 1000;
 pub const TPM_LEFTALIGN = 0x0000;
 pub const TPM_NONOTIFY = 0x0080;
 pub const TPM_RETURNCMD = 0x100;
