@@ -8,21 +8,24 @@ pub const ID_TRAY_FIRST = 1000;
 
 const AtomicBool = std.atomic.Value(bool);
 
+pub const OnClick = *const fn (*Tray) void;
+pub const OnPopupClick = OnClick;
+
 pub const Tray = struct {
     allocator: std.mem.Allocator,
     // icon
-    icon: std.os.windows.HICON,
+    icon: windows.HICON,
     // menus
-    menu: []const ConstMenu,
+    menu: ?[]const ConstMenu,
 
     // callback on click on left
-    onPopupClick: ?*const fn (*Tray) void = null,
-    onClick: ?*const fn (*Tray) void = null,
+    onPopupClick: ?OnPopupClick = null,
+    onClick: ?OnClick = null,
     mutable_menu: ?[]Menu = null,
     running: AtomicBool = AtomicBool.init(true),
     wc: WNDCLASSEXA = zeroes(WNDCLASSEXA),
-    hwnd: std.os.windows.HWND = undefined,
-    hmenu: std.os.windows.HMENU = undefined,
+    hwnd: windows.HWND = undefined,
+    hmenu: windows.HMENU = undefined,
     nid: NOTIFYICONDATAW = zeroes(NOTIFYICONDATAW),
 
     pub fn init(self: *Tray) !void {
@@ -35,7 +38,7 @@ pub const Tray = struct {
         // the extra memory allocated
         // to store the self ptr
         self.wc.cbWndExtra = @sizeOf(*Tray);
-        self.wc.hInstance = @as(std.os.windows.HINSTANCE, @ptrCast(std.os.windows.kernel32.GetModuleHandleW(null)));
+        self.wc.hInstance = @as(windows.HINSTANCE, @ptrCast(windows.kernel32.GetModuleHandleW(null)));
         self.wc.lpszClassName = lib_win.WC_TRAY_CLASS_NAME;
 
         // try register class
@@ -44,7 +47,7 @@ pub const Tray = struct {
         self.hwnd = try createWindowExA(0, lib_win.WC_TRAY_CLASS_NAME, lib_win.WC_TRAY_CLASS_NAME, 0, 0, 0, 0, 0, null, null, self.wc.hInstance, null);
 
         // set the extra memory allocated
-        _ = lib_win.SetWindowLongPtrA(self.hwnd, 0, @as(std.os.windows.LONG_PTR, @intCast(@intFromPtr(self))));
+        _ = lib_win.SetWindowLongPtrA(self.hwnd, 0, @as(windows.LONG_PTR, @intCast(@intFromPtr(self))));
         // render window immediately
         _ = lib_win.UpdateWindow(self.hwnd);
 
@@ -61,10 +64,11 @@ pub const Tray = struct {
         self.update();
     }
 
+    // This will force a refresh of the entire tray information
     fn update(self: *Tray) void {
         // get previous menu
         const prevmenu = self.hmenu;
-        var id: std.os.windows.UINT = ID_TRAY_FIRST;
+        var id: windows.UINT = ID_TRAY_FIRST;
         // generate hmenu
         self.hmenu = Tray.convertMenu(self.mutable_menu.?, &id);
         // render notify icon
@@ -89,7 +93,7 @@ pub const Tray = struct {
 
     pub fn loop(self: *Tray) bool {
         var msg: MSG = undefined;
-        if (lib_win.PeekMessageA(&msg, self.hwnd, 0, 0, lib_win.PM_REMOVE) == std.os.windows.FALSE)
+        if (lib_win.PeekMessageA(&msg, self.hwnd, 0, 0, lib_win.PM_REMOVE) == windows.FALSE)
             return true;
 
         if (msg.message == lib_win.WM_QUIT)
@@ -104,7 +108,7 @@ pub const Tray = struct {
         self.running.store(false, .monotonic);
     }
 
-    pub fn showNotification(self: *Tray, title: []const u8, text: []const u8, timeout_ms: u32) std.os.windows.BOOL {
+    pub fn showNotification(self: *Tray, title: []const u8, text: []const u8, timeout_ms: u32) windows.BOOL {
         const old_flags = self.nid.uFlags;
         self.nid.uFlags |= lib_win.NIF_INFO;
         self.nid.DUMMYUNIONNAME.uTimeout = timeout_ms;
@@ -151,7 +155,7 @@ pub const Tray = struct {
         }
     }
 
-    fn convertMenu(menu: []Menu, id: *std.os.windows.UINT) std.os.windows.HMENU {
+    fn convertMenu(menu: []Menu, id: *windows.UINT) windows.HMENU {
         const hmenu = lib_win.CreatePopupMenu();
         for (menu) |*item| {
             defer id.* += 1;
@@ -247,24 +251,37 @@ const MSG = lib_win.MSG;
 
 const WNDCLASSEXA = lib_win.WNDCLASSEXA;
 
-fn createWindowExA(dwExStyle: u32, lpClassName: [*:0]const u8, lpWindowName: [*:0]const u8, dwStyle: u32, X: i32, Y: i32, nWidth: i32, nHeight: i32, hWindParent: ?std.os.windows.HWND, hMenu: ?std.os.windows.HMENU, hInstance: std.os.windows.HINSTANCE, lpParam: ?*anyopaque) !std.os.windows.HWND {
+fn createWindowExA(
+    dwExStyle: u32,
+    lpClassName: [*:0]const u8,
+    lpWindowName: [*:0]const u8,
+    dwStyle: u32,
+    X: i32,
+    Y: i32,
+    nWidth: i32,
+    nHeight: i32,
+    hWindParent: ?windows.HWND,
+    hMenu: ?windows.HMENU,
+    hInstance: windows.HINSTANCE,
+    lpParam: ?*anyopaque,
+) !windows.HWND {
     const window = lib_win.CreateWindowExA(dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWindParent, hMenu, hInstance, lpParam);
     if (window) |win| return win;
 
-    switch (std.os.windows.kernel32.GetLastError()) {
+    switch (windows.kernel32.GetLastError()) {
         .CLASS_DOES_NOT_EXIST => return error.ClassDoesNotExist,
         .INVALID_PARAMETER => unreachable,
-        else => |err| return std.os.windows.unexpectedError(err),
+        else => |err| return windows.unexpectedError(err),
     }
 }
 
-fn registerClassExA(window_class: *const WNDCLASSEXA) !std.os.windows.ATOM {
+fn registerClassExA(window_class: *const WNDCLASSEXA) !windows.ATOM {
     const atom = lib_win.RegisterClassExA(window_class);
     if (atom != 0) return atom;
-    switch (std.os.windows.kernel32.GetLastError()) {
+    switch (windows.kernel32.GetLastError()) {
         .CLASS_ALREADY_EXISTS => return error.AlreadyExists,
         .INVALID_PARAMETER => unreachable,
-        else => |err| return std.os.windows.unexpectedError(err),
+        else => |err| return windows.unexpectedError(err),
     }
 }
 
@@ -280,7 +297,7 @@ const BITMAPV5HEADER = lib_win.BITMAPV5HEADER;
 
 const ICONINFO = lib_win.ICONINFO;
 
-fn WndProc(hwnd: std.os.windows.HWND, uMsg: std.os.windows.UINT, wParam: std.os.windows.WPARAM, lParam: std.os.windows.LPARAM) callconv(std.os.windows.WINAPI) std.os.windows.LRESULT {
+fn WndProc(hwnd: windows.HWND, uMsg: windows.UINT, wParam: windows.WPARAM, lParam: windows.LPARAM) callconv(windows.WINAPI) windows.LRESULT {
     const tray_pointer = lib_win.GetWindowLongPtrA(hwnd, 0);
     if (tray_pointer == 0) {
         return lib_win.DefWindowProcA(hwnd, uMsg, wParam, lParam);
@@ -314,7 +331,7 @@ fn WndProc(hwnd: std.os.windows.HWND, uMsg: std.os.windows.UINT, wParam: std.os.
             }
 
             if (lParam == lib_win.WM_RBUTTONUP) {
-                var point: std.os.windows.POINT = undefined;
+                var point: windows.POINT = undefined;
                 _ = lib_win.GetCursorPos(&point);
                 _ = lib_win.SetForegroundWindow(tray.hwnd);
                 const cmd = lib_win.TrackPopupMenu(tray.hmenu, lib_win.TPM_LEFTALIGN | lib_win.TPM_RIGHTBUTTON | lib_win.TPM_RETURNCMD | lib_win.TPM_NONOTIFY, point.x, point.y, 0, hwnd, null);
@@ -338,7 +355,7 @@ fn WndProc(hwnd: std.os.windows.HWND, uMsg: std.os.windows.UINT, wParam: std.os.
     return 0;
 }
 
-fn getMenuItemFromWParam(item: *MENUITEMINFOW, hMenu: std.os.windows.HMENU, wParam: std.os.windows.WPARAM) ?*Menu {
+fn getMenuItemFromWParam(item: *MENUITEMINFOW, hMenu: windows.HMENU, wParam: windows.WPARAM) ?*Menu {
     item.cbSize = @sizeOf(MENUITEMINFOW);
     item.fMask = lib_win.MIIM_ID | lib_win.MIIM_DATA;
     if (lib_win.GetMenuItemInfoW(hMenu, @as(c_uint, @intCast(wParam)), 0, item) != 0) {
@@ -351,8 +368,8 @@ fn getMenuItemFromWParam(item: *MENUITEMINFOW, hMenu: std.os.windows.HMENU, wPar
     return null;
 }
 
-pub fn createIconFromFile(path: [:0]const u8) !std.os.windows.HICON {
-    var icon: std.os.windows.HICON = undefined;
+pub fn createIconFromFile(path: [:0]const u8) !windows.HICON {
+    var icon: windows.HICON = undefined;
     const ret = lib_win.ExtractIconExA(path, 0, null, &icon, 1);
     if (ret != 1) {
         return error.NotIcon;
@@ -360,7 +377,7 @@ pub fn createIconFromFile(path: [:0]const u8) !std.os.windows.HICON {
     return icon;
 }
 
-pub fn createIconFromRGBA(icon_data: []const u8, width: u32, height: u32) !std.os.windows.HICON {
+pub fn createIconFromRGBA(icon_data: []const u8, width: u32, height: u32) !windows.HICON {
     var bi = std.mem.zeroes(BITMAPV5HEADER);
     bi.bV5Size = @sizeOf(BITMAPV5HEADER);
     bi.bV5Width = @as(i32, @intCast(width));
