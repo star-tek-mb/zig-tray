@@ -12,23 +12,47 @@ pub const OnClick = *const fn (*Tray) void;
 pub const OnPopupClick = OnClick;
 
 pub const Tray = struct {
-    allocator: std.mem.Allocator,
+    allocator: std.mem.Allocator = undefined,
     // icon
-    icon: windows.HICON,
+    icon: windows.HICON = undefined,
     // menus
-    menu: ?[]const ConstMenu,
+    menu: ?[]const ConstMenu = null,
 
-    // callback on click on left
+    // callback for clicking on notification message
     onPopupClick: ?OnPopupClick = null,
+    // callback for left clicking on icon
     onClick: ?OnClick = null,
+
+    // note: The following types cannot be manually assigned
+
     mutable_menu: ?[]Menu = null,
     running: AtomicBool = AtomicBool.init(true),
+
+    // follow four attributes is for windows
     wc: WNDCLASSEXA = zeroes(WNDCLASSEXA),
     hwnd: windows.HWND = undefined,
     hmenu: windows.HMENU = undefined,
     nid: NOTIFYICONDATAW = zeroes(NOTIFYICONDATAW),
 
-    pub fn init(self: *Tray) !void {
+    /// init the Tray
+    /// Note: must create a Tray before call this method
+    pub fn init(
+        self: *Tray,
+        allocator: std.mem.Allocator,
+        icon: windows.HICON,
+        menu: []ConstMenu,
+        onPopupClick: ?OnPopupClick,
+        onClick: ?OnClick,
+    ) !void {
+        // TODO: Need to handle errors that may occur during initialization
+
+        // set the basical attribute
+        self.allocator = allocator;
+        self.icon = icon;
+        self.menu = menu;
+        self.onPopupClick = onPopupClick;
+        self.onClick = onClick;
+
         self.mutable_menu = try Tray.allocateMenu(self, self.menu);
 
         // init the wc of self
@@ -208,7 +232,8 @@ pub const Tray = struct {
         _ = lib_win.DestroyMenu(self.hmenu);
         _ = lib_win.PostQuitMessage(0);
         _ = lib_win.UnregisterClassA(lib_win.WC_TRAY_CLASS_NAME, self.wc.hInstance);
-        freeMenu(self.allocator, self.mutable_menu.?);
+        if (self.mutable_menu) |mutable_menu|
+            freeMenu(self.allocator, mutable_menu);
     }
 };
 

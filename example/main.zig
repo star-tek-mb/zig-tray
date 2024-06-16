@@ -1,15 +1,20 @@
 const std = @import("std");
 const tray = @import("tray");
 
+var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+
 pub fn main() !void {
-    var tray_instance = tray.Tray{
-        .allocator = std.heap.page_allocator,
-        .icon = try tray.createIconFromFile("icon.ico"),
-        .menu = &first_layer_menu,
-        .onPopupClick = onPopupClick,
-        .onClick = onClick,
-    };
-    try tray_instance.init();
+    const allocator = gpa.allocator();
+    defer if (gpa.deinit() == .leak) @panic("TEST FAIL");
+
+    var tray_instance = tray.Tray{};
+    try tray_instance.init(
+        allocator,
+        try tray.createIconFromFile("icon.ico"),
+        &first_layer_menu,
+        onPopupClick,
+        onClick,
+    );
     defer tray_instance.deinit();
     tray_instance.run();
 }
