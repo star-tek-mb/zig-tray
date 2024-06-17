@@ -2,6 +2,13 @@
 
 zig-tray is a library for creating tray applications. Supports tray and notifications.
 
+## Features
+
+- tray witch `.ico` support!
+- left click callback support
+- right click callback support
+- sending notification and notification click callback support
+
 ## Supported platforms
 
  - [x] Windows
