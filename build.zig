@@ -14,8 +14,35 @@ pub fn build(b: *std.Build) !void {
         else => @panic("Unsupported platform, now only support windows"),
     };
 
+    // generate docs
+    generateDocs(b, target, optimize);
+
     // build example
     example(b, target, optimize, zigTray);
+}
+
+/// for generate docs
+fn generateDocs(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) void {
+    const zig_tray_obj = b.addObject(.{
+        .name = "zig-tray-obj",
+        .root_source_file = b.path("src/tray_windows.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const docs_step = b.step("docs", "Generate docs");
+
+    const docs_install = b.addInstallDirectory(.{
+        .source_dir = zig_tray_obj.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+
+    docs_step.dependOn(&docs_install.step);
 }
 
 /// for build example
@@ -33,18 +60,17 @@ fn example(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
 
     exe.root_module.addImport("tray", module);
 
-    // install the icon file
-    b.installFile("example/icon.ico", "bin/icon.ico");
+    const installfile = b.addInstallFile(b.path("example/icon.ico"), "bin/icon.ico");
 
-    // install artifact
-    b.installArtifact(exe);
+    const artiface = b.addInstallArtifact(exe, .{});
 
     const run_cmd = b.addRunArtifact(exe);
-    run_cmd.step.dependOn(b.getInstallStep());
+    run_cmd.step.dependOn(&installfile.step);
+    run_cmd.step.dependOn(&artiface.step);
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }
 
-    const run_step = b.step("run", "Run the app");
+    const run_step = b.step("example", "Run the app");
     run_step.dependOn(&run_cmd.step);
 }

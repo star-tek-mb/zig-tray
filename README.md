@@ -1,60 +1,46 @@
-# Overview
+# zig-tray
 
 zig-tray is a library for creating tray applications. Supports tray and notifications.
 
-# Supported platforms
+## Supported platforms
 
  - [x] Windows
  - [ ] Linux
  - [ ] MacOS
 
-# Installation
+## Installation
 
-Zig Package Manager ready. Add dependency to your `build.zig.zon`. And use `tray` module from dependency.
+### Zig `0.12` \ `0.13.0` \ `nightly`
 
-# Usage
+1. Add to `build.zig.zon`
 
-```zig
-const std = @import("std");
-const tray = @import("tray");
-
-pub fn onAction(menu: *tray.Menu) void {
-    menu.tray.showNotification("zig-tray", "Hello world", 5000);
-}
-
-pub fn onQuit(menu: *tray.Menu) void {
-    menu.tray.exit();
-}
-
-pub fn main() !void {
-    var tray_instance = tray.Tray{
-        .allocator = std.heap.page_allocator,
-        .icon = try tray.createIconFromFile("icon.ico"),
-        .menu = &[_]tray.ConstMenu{
-            .{
-                .text = "Hello",
-                .submenu = &[_]tray.ConstMenu{
-                    .{
-                        .text = "Submenu",
-                        .onClick = onAction,
-                    },
-                },
-            },
-            .{
-                .text = "Quit",
-                .onClick = onQuit,
-            },
-        },
-    };
-    try tray_instance.init();
-    defer tray_instance.deinit();
-    tray_instance.run();
-}
+```sh
+# It is recommended to replace the following branch with commit id
+zig fetch --save https://github.com/star-tek-mb/zig-tray/archive/master.tar.gz
+# Of course, you can also use git+https to fetch this package!
 ```
 
-see **main.zig** for another example
+2. Config `build.zig`
 
-# Credits
+Add this:
+
+```zig
+// To standardize development, maybe you should use `lazyDependency()` instead of `dependency()`
+// more info to see: https://ziglang.org/download/0.12.0/release-notes.html#toc-Lazy-Dependencies
+const zig_tray = b.dependency("zig-tray", .{
+    .target = target,
+    .optimize = optimize,
+});
+
+// add module
+exe.root_module.addImport("zig-tray", zig_tray.module("tray"));
+```
+
+## Example
+
+see folder `example`!
+
+## Credits
 
 https://github.com/zserge/tray - for initial C library
 https://github.com/glfw/glfw/blob/master/src/win32_window.c#L102 - for icon creating from rgba
