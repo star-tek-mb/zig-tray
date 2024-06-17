@@ -145,6 +145,7 @@ pub const NIM_MODIFY = 0x00000001;
 pub const NIM_DELETE = 0x00000002;
 pub const BI_BITFIELDS = 3;
 pub const DIB_RGB_COLORS = 0;
+pub const LR_DEFAULTCOLOR = 0x00000000;
 
 pub const NOTIFYICONDATAW = extern struct {
     cbSize: std.os.windows.DWORD = @sizeOf(NOTIFYICONDATAW),
@@ -324,3 +325,21 @@ pub extern "gdi32" fn CreateBitmap(
 pub extern "gdi32" fn DeleteObject(
     ho: HBITMAP,
 ) callconv(std.os.windows.WINAPI) std.os.windows.BOOL;
+
+pub extern "user32" fn CreateIconFromResourceEx(
+    presbits: [*c]const u8,
+    dwResSize: std.os.windows.DWORD,
+    fIcon: std.os.windows.BOOL,
+    dwVar: std.os.windows.BOOL,
+    cxDesired: c_int,
+    cyDesired: c_int,
+    Flags: std.os.windows.UINT,
+) callconv(std.os.windows.WINAPI) ?std.os.windows.HICON;
+
+pub extern "user32" fn LookupIconIdFromDirectoryEx(
+    presbits: [*c]const u8,
+    fIcon: std.os.windows.BOOL,
+    cxDesired: c_int,
+    cyDesired: c_int,
+    Flags: std.os.windows.UINT,
+) callconv(std.os.windows.WINAPI) c_int;
