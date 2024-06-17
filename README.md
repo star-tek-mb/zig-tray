@@ -10,7 +10,7 @@ zig-tray is a library for creating tray applications. Supports tray and notifica
 
 ## Installation
 
-### Zig `0.12` \ `0.13.0` \ `nightly`
+### Zig `0.12` \ `0.13.0`
 
 1. Add to `build.zig.zon`
 
