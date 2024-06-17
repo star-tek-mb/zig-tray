@@ -14,6 +14,7 @@ pub fn main() !void {
         &first_layer_menu,
         onPopupClick,
         onClick,
+        10_000_000,
     );
     defer tray_instance.deinit();
     tray_instance.run();

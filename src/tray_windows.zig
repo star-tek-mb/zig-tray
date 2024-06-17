@@ -18,6 +18,8 @@ pub const Tray = struct {
     // menus
     menu: ?[]const ConstMenu = null,
 
+    block_time: u32 = 0,
+
     // callback for clicking on notification message
     onPopupClick: ?OnPopupClick = null,
     // callback for left clicking on icon
@@ -43,6 +45,7 @@ pub const Tray = struct {
         menu: []ConstMenu,
         onPopupClick: ?OnPopupClick,
         onClick: ?OnClick,
+        block_time: u32,
     ) !void {
         // TODO: Need to handle errors that may occur during initialization
 
@@ -52,6 +55,7 @@ pub const Tray = struct {
         self.menu = menu;
         self.onPopupClick = onPopupClick;
         self.onClick = onClick;
+        self.block_time = block_time;
 
         self.mutable_menu = try Tray.allocateMenu(self, self.menu);
 
@@ -117,8 +121,14 @@ pub const Tray = struct {
 
     pub fn loop(self: *Tray) bool {
         var msg: MSG = undefined;
-        if (lib_win.PeekMessageA(&msg, self.hwnd, 0, 0, lib_win.PM_REMOVE) == windows.FALSE)
-            return true;
+        if (self.block_time > 0) {
+            std.time.sleep(self.block_time);
+            if (lib_win.PeekMessageA(&msg, self.hwnd, 0, 0, lib_win.PM_REMOVE) == windows.FALSE)
+                return true;
+        } else {
+            if (lib_win.GetMessageA(&msg, self.hwnd, 0, 0) == windows.FALSE)
+                return true;
+        }
 
         if (msg.message == lib_win.WM_QUIT)
             return false;

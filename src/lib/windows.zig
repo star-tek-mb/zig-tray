@@ -59,6 +59,13 @@ pub extern "user32" fn SetWindowLongPtrA(
     dwNewLong: std.os.windows.LONG_PTR,
 ) callconv(std.os.windows.WINAPI) std.os.windows.LONG_PTR;
 
+pub extern "user32" fn GetMessageA(
+    lpMsg: *MSG,
+    hWnd: ?std.os.windows.HWND,
+    wMsgFilterMin: std.os.windows.UINT,
+    wMsgFilterMax: std.os.windows.UINT,
+) callconv(std.os.windows.WINAPI) std.os.windows.BOOL;
+
 pub extern "user32" fn PeekMessageA(
     lpMsg: *MSG,
     hWnd: ?std.os.windows.HWND,
