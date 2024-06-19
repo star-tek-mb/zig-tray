@@ -350,3 +350,15 @@ pub extern "user32" fn LookupIconIdFromDirectoryEx(
     cyDesired: c_int,
     Flags: std.os.windows.UINT,
 ) callconv(std.os.windows.WINAPI) c_int;
+
+pub const DPI_AWARENESS_CONTEXT = isize;
+
+pub const DPI_AWARENESS_CONTEXT_UNAWARE: DPI_AWARENESS_CONTEXT = -1;
+pub const DPI_AWARENESS_CONTEXT_SYSTEM_AWARE: DPI_AWARENESS_CONTEXT = -2;
+pub const DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE: DPI_AWARENESS_CONTEXT = -3;
+pub const DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2: DPI_AWARENESS_CONTEXT = -4;
+pub const DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED: DPI_AWARENESS_CONTEXT = -5;
+
+pub extern "user32" fn SetProcessDpiAwarenessContext(
+    value: DPI_AWARENESS_CONTEXT,
+) callconv(std.os.windows.WINAPI) std.os.windows.BOOL;

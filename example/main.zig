@@ -10,6 +10,8 @@ pub fn main() !void {
     var tray_instance = tray.Tray{};
     try tray_instance.init(
         allocator,
+        // enable high dp support, default is true
+        null,
         try tray.createIconFromFile("icon.ico"),
         &first_layer_menu,
         onPopupClick,
