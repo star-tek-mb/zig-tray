@@ -18,6 +18,9 @@ pub const Tray = struct {
     // menus
     menu: ?[]const ConstMenu = null,
 
+    hight_dpi: bool = true,
+
+    /// whether enable high dpi support
     block_time: u32 = 0,
 
     // callback for clicking on notification message
@@ -41,6 +44,7 @@ pub const Tray = struct {
     pub fn init(
         self: *Tray,
         allocator: std.mem.Allocator,
+        hight_dpi: ?bool,
         icon: windows.HICON,
         menu: []ConstMenu,
         onPopupClick: ?OnPopupClick,
@@ -56,6 +60,12 @@ pub const Tray = struct {
         self.onPopupClick = onPopupClick;
         self.onClick = onClick;
         self.block_time = block_time;
+
+        if (hight_dpi) |val|
+            self.hight_dpi = val;
+
+        if (self.hight_dpi)
+            try adaptDpi();
 
         self.mutable_menu = try Tray.allocateMenu(self, self.menu);
 
@@ -403,9 +413,23 @@ fn getMenuItemFromWParam(item: *MENUITEMINFOW, hMenu: windows.HMENU, wParam: win
     return null;
 }
 
+/// this function is for adapt hight dpi
+fn adaptDpi() !void {
+    if (lib_win.SetProcessDpiAwarenessContext(
+        lib_win.DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+    ) == windows.FALSE)
+        return error.setDpiFailed;
+}
+
 pub fn createIconFromFile(path: [:0]const u8) !windows.HICON {
     var icon: windows.HICON = undefined;
-    const ret = lib_win.ExtractIconExA(path, 0, null, &icon, 1);
+    const ret = lib_win.ExtractIconExA(
+        path,
+        0,
+        null,
+        &icon,
+        1,
+    );
     if (ret != 1) {
         return error.NotIcon;
     }
