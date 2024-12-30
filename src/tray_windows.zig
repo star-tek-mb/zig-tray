@@ -158,9 +158,9 @@ pub const Tray = struct {
         self.nid.DUMMYUNIONNAME.uTimeout = timeout_ms;
         self.nid.dwInfoFlags = 0;
 
-        const title_utf16 = std.unicode.utf8ToUtf16LeWithNull(self.allocator, title) catch return 0;
+        const title_utf16 = std.unicode.utf8ToUtf16LeAllocZ(self.allocator, title) catch return 0;
         defer self.allocator.free(title_utf16);
-        const text_utf16 = std.unicode.utf8ToUtf16LeWithNull(self.allocator, text) catch return 0;
+        const text_utf16 = std.unicode.utf8ToUtf16LeAllocZ(self.allocator, text) catch return 0;
         defer self.allocator.free(text_utf16);
 
         var i: usize = 0;
@@ -187,7 +187,7 @@ pub const Tray = struct {
             const result = try tray.allocator.alloc(Menu, menu.len);
             for (result, 0..) |*item, i| {
                 item.tray = tray;
-                item.text = if (menu[i].text == .text) try std.unicode.utf8ToUtf16LeWithNull(tray.allocator, menu[i].text.text) else null;
+                item.text = if (menu[i].text == .text) try std.unicode.utf8ToUtf16LeAllocZ(tray.allocator, menu[i].text.text) else null;
                 item.disabled = menu[i].disabled;
                 item.checked = menu[i].checked;
                 item.onClick = menu[i].onClick;
@@ -280,7 +280,7 @@ pub const Menu = struct {
     submenu: ?[]Menu,
 
     pub fn setText(self: *Menu, text: []const u8) void {
-        const text_utf16 = std.unicode.utf8ToUtf16LeWithNull(self.tray.allocator, text) catch return;
+        const text_utf16 = std.unicode.utf8ToUtf16LeAllocZ(self.tray.allocator, text) catch return;
         if (self.text) |t|
             self.tray.allocator.free(t);
 
